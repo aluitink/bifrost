@@ -1,56 +1,25 @@
 ﻿using System;
+using System.Diagnostics.SymbolStore;
 using System.Net;
 using System.Net.Sockets;
-using Bifrost.Public.Sdk.Interfaces;
-using Bifrost.Public.Sdk.Protocols;
+
 
 namespace Bifrost.Public.Sdk
 {
-    public class Server<T> : IHandler, IDisposable
-        where T : ProtocolHandler
+    public class Server : IDisposable
     {
+        public event Action<SocketAsyncEventArgs> AcceptComplete;
+        public event Action<SocketAsyncEventArgs, Action<SocketAsyncEventArgs>> DataReceived;
+        public event Action<SocketAsyncEventArgs, Action<SocketAsyncEventArgs>> DataSent;
+
+        
         private readonly Socket _listeningSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        private readonly Func<IHandler, Socket, T> _createProtocolHandlerFunc; 
-        public Server(Func<IHandler, Socket, T> createProtocolHandlerFunc)
-        {
-            _createProtocolHandlerFunc = createProtocolHandlerFunc;
-        }
 
         public void Start(IPEndPoint listeningAddress)
         {
             _listeningSocket.Bind(listeningAddress);
             _listeningSocket.Listen(4);
             StartAccept(null);
-        }
-
-        public virtual void ProcessSend(SocketAsyncEventArgs e)
-        {
-            // check if the remote host closed the connection
-            if (e.SocketError != SocketError.Success)
-                throw new ApplicationException("Socket was in error.");
-
-            T protocolHandler = e.UserToken as T;
-
-            if (protocolHandler == null)
-                throw new ApplicationException("Could not get protocol handler from UserToken");
-
-            protocolHandler.HandleSend(e);
-        }
-        public virtual void ProcessReceive(SocketAsyncEventArgs e)
-        {
-            // check if the remote host closed the connection
-            if (e.SocketError != SocketError.Success)
-                throw new ApplicationException("Socket was in error.");
-
-            T protocolHandler = e.UserToken as T;
-
-            if (protocolHandler == null)
-                throw new ApplicationException("Could not get protocol handler from UserToken");
-
-            if (e.BytesTransferred > 0)
-                protocolHandler.HandleReceived(e);
-            else
-                CloseConnection(e);
         }
 
         private void StartAccept(SocketAsyncEventArgs acceptEventArgs)
@@ -75,20 +44,44 @@ namespace Bifrost.Public.Sdk
             if (acceptAsyncEventArgs.SocketError == SocketError.Success)
             {
                 var socket = acceptAsyncEventArgs.AcceptSocket;
-
-                T protocolHandler = _createProtocolHandlerFunc(this, socket);
                 
                 SocketAsyncEventArgs receiveAsyncEventArgs = new SocketAsyncEventArgs();
                 receiveAsyncEventArgs.AcceptSocket = socket;
                 receiveAsyncEventArgs.Completed += IOCompleted;
-                receiveAsyncEventArgs.UserToken = protocolHandler;
+
                 receiveAsyncEventArgs.SetBuffer(new byte[1024], 0, 1024);
 
-                if (!socket.ReceiveAsync(receiveAsyncEventArgs))
-                    ProcessReceive(receiveAsyncEventArgs);
+                OnAcceptComplete(receiveAsyncEventArgs);//allows subscriber to set UserToken before call to ReceiveAsync
+
+                Receive(receiveAsyncEventArgs);
             }
             StartAccept(acceptAsyncEventArgs);
         }
+
+        private void ProcessReceive(SocketAsyncEventArgs receiveAsyncEventArgs)
+        {
+            OnDataReceived(receiveAsyncEventArgs);
+        }
+
+        private void ProcessSend(SocketAsyncEventArgs sendAsyncEventArgs)
+        {
+            OnDataSent(sendAsyncEventArgs);
+        }
+
+        private void Receive(SocketAsyncEventArgs receiveAsyncEventArgs)
+        {
+            var socket = receiveAsyncEventArgs.AcceptSocket;
+            if (!socket.ReceiveAsync(receiveAsyncEventArgs))
+                ProcessReceive(receiveAsyncEventArgs);
+        }
+
+        private void Send(SocketAsyncEventArgs sendAsyncEventArgs)
+        {
+            var socket = sendAsyncEventArgs.AcceptSocket;
+            if (!socket.SendAsync(sendAsyncEventArgs))
+                ProcessSend(sendAsyncEventArgs);
+        }
+
         private void IOCompleted(object sender, SocketAsyncEventArgs e)
         {
             try
@@ -111,26 +104,31 @@ namespace Bifrost.Public.Sdk
             }
 
         }
-        private void CloseConnection(SocketAsyncEventArgs e)
-        {
-            T userToken = e.UserToken as T;
-
-            if (userToken == null)
-                throw new ApplicationException("Could not get AsyncServerState");
-
-            userToken.Close();
-        }
+        
 
         public void Dispose()
         {
-            if (_listeningSocket != null)
-                _listeningSocket.Dispose();
+            _listeningSocket?.Dispose();
         }
 
-        protected virtual void OnDataReceived(PD obj)
+        private void CloseConnection(SocketAsyncEventArgs e)
         {
-            if (DataReceived != null)
-                DataReceived(obj);
+
+        }
+
+        protected virtual void OnDataReceived(SocketAsyncEventArgs obj)
+        {
+            DataReceived?.Invoke(obj, Send);
+        }
+
+        protected virtual void OnDataSent(SocketAsyncEventArgs obj)
+        {
+            DataSent?.Invoke(obj, Receive);
+        }
+
+        protected virtual void OnAcceptComplete(SocketAsyncEventArgs obj)
+        {
+            AcceptComplete?.Invoke(obj);
         }
     }
 }
