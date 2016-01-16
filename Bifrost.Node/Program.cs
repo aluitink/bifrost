@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Bifrost.Public.Sdk;
 
 namespace Bifrost.Node
@@ -12,53 +13,32 @@ namespace Bifrost.Node
     {
         public void Main(string[] args)
         {
-            using (Server s = new Server())
-            {
-                s.AcceptComplete += eventArgs =>
-                {
-                    eventArgs.UserToken = "Test user object";
-                };
+            NodeAsync node1 = new NodeAsync();
 
-                s.DataReceived += (eventArgs, sendCallback) =>
-                {
-                    Console.WriteLine("Received...");
-                    eventArgs.SetBuffer(0, eventArgs.BytesTransferred);
-                    Console.WriteLine("Echoing...");
-                    sendCallback(eventArgs);
-                };
+            NodeAsync node2 = new NodeAsync();
 
+            
 
-                s.DataSent += (eventArgs, receiveCallback) =>
-                {
-                    Console.WriteLine("Sending...");
-                };
+            NodeAsync node3 = new NodeAsync();
+            
 
-                s.Start(new IPEndPoint(IPAddress.Loopback, 100));
+            NodeAsync node4 = new NodeAsync();
+            
 
-                Thread.Sleep(2000);
+            node4.StartAsync("127.0.0.1", 124).Wait();
+            
+            node3.AddNode(node4.Self);
 
-                TcpClient client = new TcpClient("localhost", 100);
+            node3.StartAsync("127.0.0.1", 123).Wait();
 
-                using (var stream = client.GetStream())
-                {
-                    byte[] a = Encoding.ASCII.GetBytes("look at this");
+            
+            node2.AddNode(node3.Self);
 
-                    stream.Write(a, 0, a.Length);
-                    byte[] receive = new byte[1024];
-                    var read = stream.Read(receive, 0, receive.Length);
+            node2.StartAsync("127.0.0.1", 122).Wait();
 
-                    byte[] b = new byte[read];
-                    Buffer.BlockCopy(receive, 0, b, 0, read);
+            node1.AddNode(node2.Self);
 
-                    if(a.SequenceEqual(b))
-                        Console.WriteLine("ECHO RECEIVED");
-
-                }
-
-                    Console.ReadLine();
-            }
+            node1.StartAsync("127.0.0.1", 121).Wait();
         }
     }
-
-    
 }
