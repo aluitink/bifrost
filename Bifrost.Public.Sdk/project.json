@@ -1,4 +1,4 @@
-﻿{
+{
   "version": "1.0.0-*",
   "description": "Bifrost.Public.Sdk Class Library",
   "authors": [ "Andrew" ],
@@ -6,9 +6,14 @@
   "projectUrl": "",
   "licenseUrl": "",
   "frameworks": {
-    "dnx451": { }
+    "dnx451": {
+      "frameworkAssemblies": {
+        "System.Runtime.Serialization": "4.0.0.0",
+        "System.XML": "4.0.0.0"
+      }
+    }
   },
   "dependencies": {
-    "SCS": "1.1.0.1"
+    "log4net": "2.0.5"
   }
 }

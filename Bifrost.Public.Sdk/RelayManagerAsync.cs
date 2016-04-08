@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading;
-using Hik.Communication.Scs.Server;
 
 namespace Bifrost.Public.Sdk
 {

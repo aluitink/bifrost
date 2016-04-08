@@ -7,7 +7,20 @@
         "type": "project",
         "framework": "DNX,Version=v4.5.1",
         "dependencies": {
-          "SCS": "1.1.0.1"
+          "log4net": "2.0.5"
+        },
+        "frameworkAssemblies": [
+          "System.Runtime.Serialization",
+          "System.XML"
+        ]
+      },
+      "log4net/2.0.5": {
+        "type": "package",
+        "compile": {
+          "lib/net45-full/log4net.dll": {}
+        },
+        "runtime": {
+          "lib/net45-full/log4net.dll": {}
         }
       },
       "SCS/1.1.0.1": {
@@ -25,7 +38,20 @@
         "type": "project",
         "framework": "DNX,Version=v4.5.1",
         "dependencies": {
-          "SCS": "1.1.0.1"
+          "log4net": "2.0.5"
+        },
+        "frameworkAssemblies": [
+          "System.Runtime.Serialization",
+          "System.XML"
+        ]
+      },
+      "log4net/2.0.5": {
+        "type": "package",
+        "compile": {
+          "lib/net45-full/log4net.dll": {}
+        },
+        "runtime": {
+          "lib/net45-full/log4net.dll": {}
         }
       },
       "SCS/1.1.0.1": {
@@ -43,7 +69,20 @@
         "type": "project",
         "framework": "DNX,Version=v4.5.1",
         "dependencies": {
-          "SCS": "1.1.0.1"
+          "log4net": "2.0.5"
+        },
+        "frameworkAssemblies": [
+          "System.Runtime.Serialization",
+          "System.XML"
+        ]
+      },
+      "log4net/2.0.5": {
+        "type": "package",
+        "compile": {
+          "lib/net45-full/log4net.dll": {}
+        },
+        "runtime": {
+          "lib/net45-full/log4net.dll": {}
         }
       },
       "SCS/1.1.0.1": {
@@ -61,6 +100,31 @@
     "Bifrost.Public.Sdk/1.0.0": {
       "type": "project",
       "path": "../Bifrost.Public.Sdk/project.json"
+    },
+    "log4net/2.0.5": {
+      "type": "package",
+      "sha512": "AEqPZz+v+OikfnR2SqRVdQPnSaLq5y9Iz1CfRQZ9kTKPYCXHG6zYmDHb7wJotICpDLMr/JqokyjiqKAjUKp0ng==",
+      "files": [
+        "lib/net10-full/log4net.dll",
+        "lib/net10-full/log4net.xml",
+        "lib/net11-full/log4net.dll",
+        "lib/net11-full/log4net.xml",
+        "lib/net20-full/log4net.dll",
+        "lib/net20-full/log4net.xml",
+        "lib/net35-client/log4net.dll",
+        "lib/net35-client/log4net.xml",
+        "lib/net35-full/log4net.dll",
+        "lib/net35-full/log4net.xml",
+        "lib/net40-client/log4net.dll",
+        "lib/net40-client/log4net.xml",
+        "lib/net40-full/log4net.dll",
+        "lib/net40-full/log4net.xml",
+        "lib/net45-full/log4net.dll",
+        "lib/net45-full/log4net.xml",
+        "log4net.2.0.5.nupkg",
+        "log4net.2.0.5.nupkg.sha512",
+        "log4net.nuspec"
+      ]
     },
     "SCS/1.1.0.1": {
       "type": "package",

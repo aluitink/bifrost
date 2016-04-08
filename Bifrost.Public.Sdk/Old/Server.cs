@@ -6,7 +6,7 @@ using System.Net.Sockets;
 
 namespace Bifrost.Public.Sdk
 {
-    public class Server : IDisposable
+    public class ServerOld : IDisposable
     {
         public event Action<SocketAsyncEventArgs> AcceptComplete;
         public event Action<SocketAsyncEventArgs, Action<SocketAsyncEventArgs>> DataReceived;

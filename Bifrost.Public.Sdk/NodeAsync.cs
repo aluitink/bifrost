@@ -2,91 +2,47 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Runtime.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
-using Bifrost.Public.Sdk.Interfaces;
+using Bifrost.Public.Sdk.Communication;
+using Bifrost.Public.Sdk.Communication.Messages;
 using Bifrost.Public.Sdk.Models;
-using Hik.Communication.Scs.Communication.EndPoints.Tcp;
-using Hik.Communication.ScsServices.Client;
-using Hik.Communication.ScsServices.Service;
+using log4net;
+using Action = Bifrost.Public.Sdk.Communication.Messages.Action;
 
 namespace Bifrost.Public.Sdk
 {
-    public class ClientManagerAsync
+    public class NodeAsync: IDisposable
     {
-        private readonly ConcurrentQueue<IScsServiceClient<INodeService>> _newClients = new ConcurrentQueue<IScsServiceClient<INodeService>>();
-        private readonly ConcurrentDictionary<Guid, IScsServiceClient<INodeService>> _establishedClients = new ConcurrentDictionary<Guid, IScsServiceClient<INodeService>>();
+        public List<Node> Peers => _establishedPeers != null ? _establishedPeers.Keys.ToList() : new List<Node>();
 
-        public ClientManagerAsync()
-        {
-            
-        }
-
-        public async void AddNodeAsync(Node node)
-        {
-            string ipAddress;
-            int port;
-            if (!TryParseEndpoint(node.ControlAddress, out ipAddress, out port))
-                throw new ApplicationException("Could not parse control address.");
-
-            IScsServiceClient<INodeService> client = null;
-
-            await Task.Factory.StartNew(() =>
-            {
-                client = ScsServiceClientBuilder.CreateClient<INodeService>(new ScsTcpEndPoint(ipAddress, port));
-                client.Connect();
-            });
-            if (client == null)
-                throw new ApplicationException("Could not connect to client.");
-
-            _newClients.Enqueue(client);
-        }
-
-
-        private bool TryParseEndpoint(string endpoint, out string ipAddress, out int port)
-        {
-            ipAddress = null;
-            port = 0;
-            var parts = endpoint.Split(new[] { ":" }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 2)
-                return false;
-            try
-            {
-                ipAddress = parts[0];
-                port = Int32.Parse(parts[1]);
-                return true;
-            }
-            catch (Exception)
-            {
-                ipAddress = null;
-                port = 0;
-                return false;
-            }
-        }
-    }
-
-
-    public class NodeAsync: ScsService, INodeService, IDisposable
-    {
         public Node Self { get { return _self; } }
-        private IScsServiceApplication _serviceApplication;
 
-        private readonly List<Node> _availableNodes = new List<Node>();
-        private Node _self;
+        protected ILog Logger = Log.GetLogger(typeof (NodeAsync));
 
-        private readonly ConcurrentQueue<IScsServiceClient<INodeService>> _newClients = new ConcurrentQueue<IScsServiceClient<INodeService>>();
-        private readonly ConcurrentDictionary<Guid, IScsServiceClient<INodeService>> _establishedClients = new ConcurrentDictionary<Guid, IScsServiceClient<INodeService>>();
-        
+        private readonly BlockingCollection<Node> _newNodes = new BlockingCollection<Node>(); 
+        private readonly ConcurrentDictionary<Node, Client> _establishedPeers = new ConcurrentDictionary<Node, Client>();
+
+        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+
+        private readonly Server _server;
+        private readonly Node _self;
+
+        public NodeAsync()
+        {
+            _server = new Server(this);
+            _self = new Node();
+        }
+
         public async Task StartAsync(string ipAddress, int port)
         {
-            _serviceApplication = ScsServiceBuilder.CreateService(new ScsTcpEndPoint(ipAddress, port));
-            _serviceApplication.AddService<INodeService, NodeAsync>(this);
-            _serviceApplication.ClientConnected += ServiceApplicationOnClientConnected;
-            _serviceApplication.ClientDisconnected += ServiceApplicationOnClientDisconnected;
-            _serviceApplication.Start();
-
-            _self = new Node();
-            _self.ControlAddress = string.Format("{0}:{1}", ipAddress, port);
+            Logger.Info("Node starting...");
+            _server.Start(ipAddress, port);
             _self.Id = Guid.NewGuid();
+            _self.Endpoint = ipAddress;
+            _self.Port = port;
 
             InitializeNode();
             await Task.FromResult(0);
@@ -94,138 +50,128 @@ namespace Bifrost.Public.Sdk
 
         public async Task StopAsync()
         {
-            _serviceApplication.Stop();
+            Logger.Info("Node Stopping...");
+            _newNodes.CompleteAdding();
+            _cancellationTokenSource.Cancel();
+            _server.Stop();
             await Task.FromResult(0);
         }
 
         public void AddNode(Node node)
         {
-            if(!_availableNodes.Exists(n => n.Id == node.Id))
-                _availableNodes.Add(node);
+            //Add node if we are not already established or trying to establish
+            if(_establishedPeers.Keys.All(n => n.Id != node.Id) && _newNodes.All(n => n.Id != node.Id))
+                _newNodes.Add(node);
         }
 
         public void RemoveNode(Node node)
         {
-            _availableNodes.Remove(node);
+            Client client;
+            if (_establishedPeers.TryRemove(node, out client))
+            {
+                client.Disconnect();
+            }
         }
-
-        public IEnumerable<Node> RetrieveNodes()
-        {
-            return _availableNodes;
-        }
-
-        public void SendNodes(IEnumerable<Node> nodes)
-        {
-            throw new NotImplementedException();
-        }
-
-        public bool RequestCircuit(Circuit circuit, string callbackAddress)
-        {
-            throw new NotImplementedException();
-        }
-
+        
         public void Dispose()
         {
-            if (_establishedClients != null)
+            if (_establishedPeers != null)
             {
-                foreach (var client in _establishedClients.Values)
+                foreach (var client in _establishedPeers.Values)
                 {
                     client.Disconnect();
-                    client.Dispose();
                 }
             }
         }
 
         protected void InitializeNode()
         {
-            ConnectWithNewNodes();
-            SyncWithConnectedClients();
+            Task.Factory.StartNew(ConnectWithNewNodes);
+            Task.Factory.StartNew(SyncWithPeers);
         }
-
+        
         protected void ConnectWithNewNodes()
         {
-            //Select only nodes that are not already clients
-            foreach (Node availableNode in _availableNodes.Where(n => !_establishedClients.ContainsKey(n.Id)))
+            while (!_cancellationTokenSource.IsCancellationRequested && !_newNodes.IsCompleted)
             {
-                string ipAddress;
-                int port;
-                if (!TryParseEndpoint(availableNode.ControlAddress, out ipAddress, out port))
-                    continue;
+                Node newNode = _newNodes.Take();
 
-                var client = CreateClient(ipAddress, port);
+                Logger.InfoFormat("New Node: {0}", newNode);
+
+                var client = new Client(newNode.Endpoint, newNode.Port);
 
                 try
                 {
                     client.Connect();
-                    _newClients.Enqueue(client);
+                    client.Send(new Message() { Action = Action.Handshake, Payload = _self.Id });
+                    var message = client.Receive();
+
+                    if (message.Action != Action.Handshake)
+                        throw new ApplicationException("Invalid response.");
+
+                    var serverId = (Guid)message.Payload;
+
+                    if (newNode.Id == Guid.Empty)
+                        newNode.Id = serverId;
+                    else if (!newNode.Id.Equals(serverId))
+                        throw new ApplicationException("Received Invalid Server ID");
+
+                    if (!_establishedPeers.TryAdd(newNode, client))
+                        throw new ApplicationException("Could not add client.");
+
+                    Logger.InfoFormat("Peer Established: {0}", newNode);
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e);
+                    Logger.Error("Failed to establish connection with node.", e);
+                    client.Disconnect();
                 }
-            }
-        }
-
-        protected void SyncWithConnectedClients()
-        {
-            List<Guid> establishedClients = new List<Guid>();
-            foreach (var clientData in _newClients)
-            {
-                var clientId = clientData.Key;
-                var client = clientData.Value;
-
-                var nodes = client.ServiceProxy.RetrieveNodes();
-                if(nodes == null)
-                    continue;
-
-                foreach (Node node in nodes)
-                {
-                    AddNode(node);
-                }
-                establishedClients.Add(clientId);
-                _establishedClients.GetOrAdd(clientId, guid => client);
                 
             }
-            ConnectWithNewNodes();
         }
 
-        protected IScsServiceClient<INodeService> CreateClient(string ipAddress, int port)
+        protected void SyncWithPeers()
         {
-            return ScsServiceClientBuilder.CreateClient<INodeService>(new ScsTcpEndPoint(ipAddress, port));
-        }
-
-        private void ServiceApplicationOnClientDisconnected(object sender, ServiceClientEventArgs serviceClientEventArgs)
-        {
-            Console.WriteLine("Client Disconnected: {0}", serviceClientEventArgs.Client.ClientId);
-        }
-
-        private void ServiceApplicationOnClientConnected(object sender, ServiceClientEventArgs serviceClientEventArgs)
-        {
-            Console.WriteLine("Client Connected: {0}", serviceClientEventArgs.Client.ClientId);
-        }
-
-        private bool TryParseEndpoint(string endpoint, out string ipAddress, out int port)
-        {
-            ipAddress = null;
-            port = 0;
-            var parts = endpoint.Split(new [] { ":" } , StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 2)
-                return false;
-            try
+            while (!_cancellationTokenSource.IsCancellationRequested)
             {
-                ipAddress = parts[0];
-                port = Int32.Parse(parts[1]);
-                return true;
-            }
-            catch (Exception)
-            {
-                ipAddress = null;
-                port = 0;
-                return false;
+                try
+                {
+                    foreach (KeyValuePair<Node, Client> establishedPeer in _establishedPeers)
+                    {
+                        var node = establishedPeer.Key;
+
+                        Logger.InfoFormat("Syncing with peer: {0}", node);
+
+                        var client = establishedPeer.Value;
+
+                        client.Send(new Message() { Action = Action.GetNodes });
+
+                        var queryResponse = client.Receive();
+
+                        if (queryResponse.Action != Action.Response)
+                            throw new ApplicationException("Unexpected Response.");
+
+                        var nodes = queryResponse.Payload as List<Node>;
+
+                        if (nodes == null)
+                            continue;
+
+                        foreach (Node newNode in nodes)
+                        {
+                            AddNode(newNode);
+                        }
+
+                    }
+                }
+                catch (Exception e)
+                {
+                    Logger.Error("Sync failure.", e);
+                }
+                finally
+                {
+                    Task.Delay(TimeSpan.FromSeconds(10)).Wait();
+                }
             }
         }
-
-
-        
     }
 }
