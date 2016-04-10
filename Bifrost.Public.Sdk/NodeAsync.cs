@@ -60,8 +60,11 @@ namespace Bifrost.Public.Sdk
         public void AddNode(Node node)
         {
             //Add node if we are not already established or trying to establish
-            if(_establishedPeers.Keys.All(n => n.Id != node.Id) && _newNodes.All(n => n.Id != node.Id))
-                _newNodes.Add(node);
+            lock (_newNodes)
+            {
+                if (_establishedPeers.Keys.All(n => n.Id != node.Id) && _newNodes.All(n => n.Id != node.Id) && _self.Id != node.Id)
+                    _newNodes.Add(node);
+            }
         }
 
         public void RemoveNode(Node node)
@@ -103,17 +106,20 @@ namespace Bifrost.Public.Sdk
                 try
                 {
                     client.Connect();
-                    client.Send(new Message() { Action = Action.Handshake, Payload = _self.Id });
+                    client.Send(new Message() { Action = Action.Handshake, Payload = _self });
                     var message = client.Receive();
 
                     if (message.Action != Action.Handshake)
                         throw new ApplicationException("Invalid response.");
 
-                    var serverId = (Guid)message.Payload;
+                    var clientNode = message.Payload as Node;
+
+                    if (clientNode == null)
+                        throw new ApplicationException("Unexpected Client Response");
 
                     if (newNode.Id == Guid.Empty)
-                        newNode.Id = serverId;
-                    else if (!newNode.Id.Equals(serverId))
+                        newNode.Id = clientNode.Id;
+                    else if (!newNode.Id.Equals(clientNode.Id))
                         throw new ApplicationException("Received Invalid Server ID");
 
                     if (!_establishedPeers.TryAdd(newNode, client))

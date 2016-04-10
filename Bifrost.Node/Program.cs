@@ -36,20 +36,24 @@ namespace Bifrost.Node
             node2.StartAsync("127.0.0.1", 122).Wait();
             node1.StartAsync("127.0.0.1", 121).Wait();
 
-            node3.AddNode(node4.Self);
-            node2.AddNode(node3.Self);
-            node1.AddNode(node2.Self);
-            node4.AddNode(node1.Self);
-
-            node7.AddNode(node8.Self);
-            node6.AddNode(node7.Self);
-            node5.AddNode(node6.Self);
-            node8.AddNode(node5.Self);
-
             Thread.Sleep(60000);
-
-            node1.AddNode(node8.Self);
+            node3.AddNode(node1.Self);
+            Thread.Sleep(60000);
+            node2.AddNode(node1.Self);
+            Thread.Sleep(60000);
+            node4.AddNode(node1.Self);
+            Thread.Sleep(60000);
+            node7.AddNode(node1.Self);
+            Thread.Sleep(60000);
+            node6.AddNode(node1.Self);
+            Thread.Sleep(60000);
+            node5.AddNode(node1.Self);
+            Thread.Sleep(60000);
             node8.AddNode(node1.Self);
+
+
+            //node1.AddNode(node8.Self);
+            //node8.AddNode(node1.Self);
 
             Console.WriteLine("Press Enter to exit");
             Console.ReadLine();

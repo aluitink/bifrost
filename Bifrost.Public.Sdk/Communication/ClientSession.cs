@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Bifrost.Public.Sdk.Communication.Messages;
+using Bifrost.Public.Sdk.Models;
 using log4net;
 using Action = Bifrost.Public.Sdk.Communication.Messages.Action;
 
@@ -23,17 +24,24 @@ namespace Bifrost.Public.Sdk.Communication
 
         public void SessionHandler()
         {
-            try
+            _logger.DebugFormat("New session from {0}", _remoteAddress);
+            while (_protocol.IsConnected)
             {
-                _logger.DebugFormat("New session from {0}", _remoteAddress);
-                while (_protocol.IsConnected)
+                try
                 {
                     Message message = _protocol.Receive();
 
                     switch (message.Action)
                     {
                         case Action.Handshake:
-                            _protocol.Send(new Message() { Action = Action.Handshake, Payload = _nodeAsync.Self.Id });
+                            Node serverNode = message.Payload as Node;
+
+                            if(serverNode == null)
+                                throw new ApplicationException("Undexpected Server Response");
+
+                            _nodeAsync.AddNode(serverNode);
+
+                            _protocol.Send(new Message() { Action = Action.Handshake, Payload = _nodeAsync.Self });
                             break;
                         case Action.GetNodes:
                             _protocol.Send(new Message() { Action = Action.Response, Payload = _nodeAsync.Peers });
@@ -42,15 +50,16 @@ namespace Bifrost.Public.Sdk.Communication
                             throw new ArgumentOutOfRangeException();
                     }
                 }
+                catch (Exception e)
+                {
+                    _logger.ErrorFormat(e.ToString());
+                    throw;
+                }
+                finally
+                {
+                }
             }
-            catch (Exception e)
-            {
-                _logger.ErrorFormat(e.ToString());
-                throw;
-            }
-            finally
-            {
-            }
+            
         }
         
     }
