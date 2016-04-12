@@ -10,7 +10,7 @@ using log4net;
 
 namespace Bifrost.Public.Sdk.Communication
 {
-    public class Protocol
+    public class Session
     {
         public bool IsConnected
         {
@@ -22,11 +22,11 @@ namespace Bifrost.Public.Sdk.Communication
             }
         }
 
-        private readonly ILog _logger = Log.GetLogger(typeof(Protocol));
+        private readonly ILog _logger = Log.GetLogger(typeof(Session));
         private readonly DataContractSerializer _serializer;
         private readonly Socket _socket;
 
-        public Protocol(Socket socket)
+        public Session(Socket socket)
         {
             _logger.Debug("Initializing protocol");
             _socket = socket;
@@ -40,20 +40,20 @@ namespace Bifrost.Public.Sdk.Communication
             _serializer = new DataContractSerializer(typeof(Message), contracts);
         }
 
-        public Message Receive()
+        public T Receive<T>() where T : class
         {
             var buffer = new byte[sizeof(int)];
             _socket.Receive(buffer);
             int length = BitConverter.ToInt32(buffer, 0);
-            return ReceiveContent(length);
+            return ReceiveContent<T>(length);
         }
 
-        public async Task<Message> ReceiveAsync()
+        public async Task<T> ReceiveAsync<T>() where T : class
         {
-            return await Task.Factory.StartNew<Message>(Receive);
+            return await Task.Factory.StartNew<T>(Receive<T>);
         }
 
-        public void Send(Message message)
+        public void Send<T>(T message) where T : class
         {
             using (var ms = new MemoryStream())
             {
@@ -64,9 +64,9 @@ namespace Bifrost.Public.Sdk.Communication
             }
         }
 
-        public async Task SendAsync(Message message)
+        public async Task SendAsync<T>(T message) where T: class
         {
-            await Task.Factory.StartNew(() => Send(message));
+            await Task.Factory.StartNew(() => Send<T>(message));
         }
 
         public void Disconnect()
@@ -78,7 +78,7 @@ namespace Bifrost.Public.Sdk.Communication
             }
         }
 
-        protected Message ReceiveContent(int length)
+        protected T ReceiveContent<T>(int length) where T: class
         {
             using (var memoryStream = new MemoryStream())
             {
@@ -92,7 +92,7 @@ namespace Bifrost.Public.Sdk.Communication
                 }
 
                 memoryStream.Seek(0, SeekOrigin.Begin);
-                return _serializer.ReadObject(memoryStream) as Message;
+                return _serializer.ReadObject(memoryStream) as T;
             }
         }
     }

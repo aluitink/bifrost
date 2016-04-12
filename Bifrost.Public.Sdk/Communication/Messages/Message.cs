@@ -5,13 +5,32 @@ using Bifrost.Public.Sdk.Models;
 namespace Bifrost.Public.Sdk.Communication.Messages
 {
     [DataContract]
-    [KnownType(typeof(Node))]
-    [KnownType(typeof(List<Node>))]
-    public class Message
+    public class Message { }
+
+    [DataContract]
+    public class HelloMessage: Message
     {
         [DataMember]
-        public Action Action { get; set; }
+        public Node Node { get; set; }
+    }
+
+    [DataContract]
+    public class LinkStateRequestMessage : Message
+    {
         [DataMember]
-        public object Payload { get; set; }
+        public long SerialNumber { get; set; }
+    }
+
+    [DataContract]
+    public class LinkStateUpdateMessage : Message
+    {
+        [DataMember]
+        public bool Initial { get; set; }
+
+        [DataMember]
+        public long SerialNumber { get; set; }
+
+        [DataMember]
+        public List<Node> Neighbors { get; set; }
     }
 }
